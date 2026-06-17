@@ -1,0 +1,6 @@
+{
+  "name": "MyFit",
+  "description": "AI-Powered Personal Fitness Coach that analyzes Android Health Connect activity, sleep, and recovery to create adaptive workout and nutrition plans.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
