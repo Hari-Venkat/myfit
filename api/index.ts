@@ -233,13 +233,20 @@ Respond with actionable fitness advice based on the data above. Use markdown for
     db.insertChatMessage(coachMessage);
     res.json({ message: coachMessage });
   } catch (error: any) {
-    console.error("Coach Chat Error:", error);
+    console.error("Coach Chat Error:", error?.message || error, "Status:", error?.status);
+    const errorDetail = error?.message || String(error);
+    let userMessage: string;
+    if (error.status === 429) {
+      userMessage = "I'm experiencing high demand. Please wait 30 seconds and try again.";
+    } else if (errorDetail.includes('API_KEY') || errorDetail.includes('api key') || error.status === 400 || error.status === 403) {
+      userMessage = `API configuration error: ${errorDetail}`;
+    } else {
+      userMessage = `Sorry, I encountered an issue: ${errorDetail}`;
+    }
     const fallbackMessage = {
       id: Math.random().toString(36).substring(7),
       sender: 'coach' as const,
-      text: error.status === 429
-        ? "I'm experiencing high demand. Please wait 30 seconds and try again."
-        : "Sorry, I encountered an issue. Please try again.",
+      text: userMessage,
       timestamp: new Date().toISOString()
     };
     res.json({ message: fallbackMessage });
