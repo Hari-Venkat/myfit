@@ -228,7 +228,7 @@ Respond with actionable fitness advice based on the data above. Use markdown for
 
     const ai = getGeminiClient();
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.0-flash-lite",
       contents: promptContext,
     });
 

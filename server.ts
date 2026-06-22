@@ -365,7 +365,7 @@ Provide a highly functional, encouraging, and bio-coherent answer. State precise
       // Invoke Gemini via server-only SDK call
       const ai = getGeminiClient();
       const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-2.0-flash-lite",
         contents: promptContext,
         config: {
           systemInstruction: "You are a friendly, experienced personal trainer. Under no circumstances should you generate fake metrics. If specific data is missing, explain that you are waiting for active Health Connect sync. Keep formatting readable and visual."
