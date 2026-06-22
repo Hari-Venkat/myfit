@@ -410,8 +410,6 @@ Provide a highly functional, encouraging, and bio-coherent answer. State precise
           : "Sorry, I encountered an issue processing your request. Please try again in a moment.",
         timestamp: new Date().toISOString()
       };
-      db.insertChatMessage({ id: Math.random().toString(36).substring(7), sender: 'user', text, timestamp: new Date().toISOString() });
-      db.insertChatMessage(fallbackMessage);
       res.json({ message: fallbackMessage });
     }
   });

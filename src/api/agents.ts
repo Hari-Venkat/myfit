@@ -23,14 +23,7 @@ export function getGeminiClient(): GoogleGenAI {
     if (!apiKey) {
       throw new Error("GEMINI_API_KEY environment variable is missing. Please configure it in your Secrets panel in Google AI Studio.");
     }
-    aiClient = new GoogleGenAI({
-      apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
+    aiClient = new GoogleGenAI({ apiKey });
   }
   return aiClient;
 }
