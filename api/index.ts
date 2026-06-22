@@ -270,7 +270,7 @@ app.post('/api/coach/chat/clear', (req, res) => {
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
 const GOOGLE_REDIRECT_URI = () => {
-  const base = process.env.APP_URL || 'http://localhost:3000';
+  const base = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
   return `${base}/api/auth/google/callback`;
 };
 

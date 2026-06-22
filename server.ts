@@ -438,7 +438,7 @@ Provide a highly functional, encouraging, and bio-coherent answer. State precise
   const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
   const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
   const GOOGLE_REDIRECT_URI = () => {
-    const base = process.env.APP_URL || `http://localhost:${PORT}`;
+    const base = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
     return `${base}/api/auth/google/callback`;
   };
 
