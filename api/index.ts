@@ -19,6 +19,16 @@ app.use(async (_req, _res, next) => {
   next();
 });
 
+// Debug endpoint - check Gemini config
+app.get('/api/debug/gemini', (req, res) => {
+  const key = process.env.GEMINI_API_KEY;
+  res.json({
+    keySet: !!key,
+    keyPrefix: key ? key.substring(0, 8) + '...' : 'NOT SET',
+    keyLength: key?.length || 0
+  });
+});
+
 // ==========================================
 // 1. User Onboard & Profile
 // ==========================================
