@@ -12,7 +12,7 @@ import {
   runWorkoutAgent, 
   runConsistencyAgent, 
   runWeeklyPlannerAgent,
-  getGeminiClient
+  chatCompletionText
 } from './src/api/agents.js';
 import { UserProfile, HealthMetricLog, WorkoutSession } from './src/types.js';
 
@@ -46,7 +46,7 @@ async function startServer() {
       status: 'ok', 
       databasePath: path.join(process.cwd(), 'src', 'db', 'sqlite_myfit.json'),
       currentTime: new Date().toISOString(),
-      geminiConfigured: !!process.env.GEMINI_API_KEY
+      groqConfigured: !!process.env.GROQ_API_KEY
     });
   });
 
@@ -362,17 +362,7 @@ User Question: "${text}"
 
 Provide a highly functional, encouraging, and bio-coherent answer. State precise facts first.`;
 
-      // Invoke Gemini via server-only SDK call
-      const ai = getGeminiClient();
-      const response = await ai.models.generateContent({
-        model: "gemini-2.0-flash-lite",
-        contents: promptContext,
-        config: {
-          systemInstruction: "You are a friendly, experienced personal trainer. Under no circumstances should you generate fake metrics. If specific data is missing, explain that you are waiting for active Health Connect sync. Keep formatting readable and visual."
-        }
-      });
-
-      const responseText = response.text || "I apologize, my cognitive processors are active but I couldn't formulate a recovery output. Please check your Health Connect sync.";
+      const responseText = await chatCompletionText(promptContext, "You are a friendly, experienced personal trainer. Under no circumstances should you generate fake metrics. If specific data is missing, explain that you are waiting for active Health Connect sync. Keep formatting readable and visual.") || "I apologize, I couldn't formulate a response. Please check your Health Connect sync.";
       
       const coachMessage = {
         id: Math.random().toString(36).substring(7),

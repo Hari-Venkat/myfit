@@ -6,7 +6,7 @@ import {
   getLocalDateString,
   runRecoveryAgent,
   runWeeklyPlannerAgent,
-  getGeminiClient
+  chatCompletionText
 } from '../src/api/agents.js';
 import { UserProfile, HealthMetricLog, WorkoutSession } from '../src/types.js';
 
@@ -19,9 +19,9 @@ app.use(async (_req, _res, next) => {
   next();
 });
 
-// Debug endpoint - check Gemini config
-app.get('/api/debug/gemini', (req, res) => {
-  const key = process.env.GEMINI_API_KEY;
+// Debug endpoint - check Groq config
+app.get('/api/debug/groq', (req, res) => {
+  const key = process.env.GROQ_API_KEY;
   res.json({
     keySet: !!key,
     keyPrefix: key ? key.substring(0, 8) + '...' : 'NOT SET',
@@ -226,13 +226,7 @@ User Question: "${text}"
 
 Respond with actionable fitness advice based on the data above. Use markdown formatting.`;
 
-    const ai = getGeminiClient();
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-lite",
-      contents: promptContext,
-    });
-
-    const responseText = response.text || "Sorry, I couldn't process your request right now.";
+    const responseText = await chatCompletionText(promptContext, "You are a friendly, experienced personal trainer. Provide actionable fitness advice. Use markdown formatting.") || "Sorry, I couldn't process your request right now.";
     const coachMessage = {
       id: Math.random().toString(36).substring(7),
       sender: 'coach' as const,

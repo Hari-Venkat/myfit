@@ -1,36 +1,76 @@
 /**
  * MyFit AI Coach Agent Logic
  * Implements Recovery, Nutrition, Workout, Consistency, and Weekly Planner Agents
+ * Powered by Groq (LLaMA 3.3 70B)
  */
 
-import { GoogleGenAI, Type } from "@google/genai";
+import Groq from "groq-sdk";
 import { db } from "../db/sqliteSim.js";
-import { 
-  UserProfile, 
-  HealthMetricLog, 
-  WorkoutSession, 
-  WeeklyPlan, 
-  DailyAIBriefing, 
-  ChatMessage, 
-  ExerciseItem 
+import {
+  UserProfile,
+  HealthMetricLog,
+  WorkoutSession,
+  WeeklyPlan,
+  DailyAIBriefing,
+  ChatMessage,
+  ExerciseItem
 } from "../types.js";
 
-let aiClient: GoogleGenAI | null = null;
+let groqClient: Groq | null = null;
 
-export function getGeminiClient(): GoogleGenAI {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
+const GROQ_MODEL = "llama-3.3-70b-versatile";
+
+export function getGroqClient(): Groq {
+  if (!groqClient) {
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      throw new Error("GEMINI_API_KEY environment variable is missing. Please configure it in your Secrets panel in Google AI Studio.");
+      throw new Error("GROQ_API_KEY environment variable is missing. Get one at https://console.groq.com");
     }
-    aiClient = new GoogleGenAI({ apiKey });
+    groqClient = new Groq({ apiKey });
   }
-  return aiClient;
+  return groqClient;
+}
+
+// Keep backward-compatible export name
+export const getGeminiClient = getGroqClient;
+
+async function chatCompletion(prompt: string, systemPrompt?: string): Promise<string> {
+  const groq = getGroqClient();
+  const messages: any[] = [];
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
+  }
+  messages.push({ role: "user", content: prompt });
+
+  const response = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages,
+    response_format: { type: "json_object" },
+    temperature: 0.7,
+  });
+
+  return response.choices[0]?.message?.content || "{}";
+}
+
+async function chatCompletionText(prompt: string, systemPrompt?: string): Promise<string> {
+  const groq = getGroqClient();
+  const messages: any[] = [];
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
+  }
+  messages.push({ role: "user", content: prompt });
+
+  const response = await groq.chat.completions.create({
+    model: GROQ_MODEL,
+    messages,
+    temperature: 0.7,
+  });
+
+  return response.choices[0]?.message?.content || "";
 }
 
 // Helper to format date in YYYY-MM-DD
 export function getLocalDateString(): string {
-  // Return current date in Pacific or server timezone format YYYY-MM-DD
   const d = new Date();
   return d.toISOString().split('T')[0];
 }
@@ -39,13 +79,12 @@ export function getLocalDateString(): string {
 // 1. RECOVERY AGENT
 // ==========================================
 export async function runRecoveryAgent(
-  sleepDuration: number, 
-  sleepQuality: number, 
+  sleepDuration: number,
+  sleepQuality: number,
   prevWorkoutIntensity: 'Low' | 'Moderate' | 'High' | null,
   stepsToday: number
 ): Promise<{ score: number; explanation: string }> {
   try {
-    const ai = getGeminiClient();
     db.logTelemetry('Recovery Agent', 'Initiating recovery calculation', {
       sleepDuration,
       sleepQuality,
@@ -69,34 +108,18 @@ Formulate the score scientifically:
 - Moderate load yields 60-79
 - Heavy load or poor sleep yields 40-59
 
-Respond strictly in JSON format matching this schema:
+Respond strictly in JSON format:
 {
   "score": number (0-100),
   "explanation": "Professional coaching explanation citing sleep cycles and cardiovascular loads (2-3 sentences)"
 }`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-lite",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            score: { type: Type.INTEGER },
-            explanation: { type: Type.STRING }
-          },
-          required: ["score", "explanation"]
-        }
-      }
-    });
-
-    const result = JSON.parse(response.text.trim());
+    const text = await chatCompletion(prompt);
+    const result = JSON.parse(text.trim());
     db.logTelemetry('Recovery Agent', 'Completed recovery calculation', null, result);
     return result;
   } catch (error: any) {
     console.error("Recovery Agent Error:", error);
-    // Fallback logic
     let score = 70;
     if (sleepDuration < 5) score = 35;
     else if (sleepDuration < 7) score = 55;
@@ -121,7 +144,6 @@ export async function runNutritionAgent(
   mealSuggestions: string[];
 }> {
   try {
-    const ai = getGeminiClient();
     const currentWeight = latestLog?.weight || user.weight;
     const caloriesBurnedValue = latestLog?.activeCaloriesBurned || 300;
 
@@ -151,7 +173,7 @@ Formulas:
 - Muscle Gain: Surfeit of 200-400 kcal above maintenance, higher protein (2.0g - 2.2g per kg)
 - Water: Baseline 35ml/kg + 0.5L for every 300 kcal burned.
 
-Respond strictly in JSON format matching this schema:
+Respond strictly in JSON format:
 {
   "caloriesTarget": number (integer calories, e.g. 2150),
   "proteinTargetGrams": number (integer protein in grams),
@@ -160,34 +182,12 @@ Respond strictly in JSON format matching this schema:
   "mealSuggestions": ["Meal 1 description", "Meal 2 description", "Snack suggestion"]
 }`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-lite",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            caloriesTarget: { type: Type.INTEGER },
-            proteinTargetGrams: { type: Type.INTEGER },
-            waterTargetLiters: { type: Type.NUMBER },
-            explanation: { type: Type.STRING },
-            mealSuggestions: {
-              type: Type.ARRAY,
-              items: { type: Type.STRING }
-            }
-          },
-          required: ["caloriesTarget", "proteinTargetGrams", "waterTargetLiters", "explanation", "mealSuggestions"]
-        }
-      }
-    });
-
-    const result = JSON.parse(response.text.trim());
+    const text = await chatCompletion(prompt);
+    const result = JSON.parse(text.trim());
     db.logTelemetry('Nutrition Agent', 'Completed nutrition analysis', null, result);
     return result;
   } catch (error: any) {
     console.error("Nutrition Agent Error:", error);
-    // Safe fallbacks
     const isGain = user.fitnessGoal === 'Muscle Gain';
     const isLoss = user.fitnessGoal === 'Weight Loss' || user.fitnessGoal === 'Fat Loss';
     const baseCals = isGain ? 2600 : isLoss ? 1800 : 2100;
@@ -220,7 +220,6 @@ export async function runWorkoutAgent(
   exercises: ExerciseItem[];
 }> {
   try {
-    const ai = getGeminiClient();
     db.logTelemetry('Workout Agent', 'Assembling custom structural resistance plan', {
       userGoal: user.fitnessGoal,
       workoutStyle: user.workoutStyle,
@@ -247,7 +246,7 @@ Exercises must match the TodayFocus (e.g., if "Push" => Chest/Shoulders/Triceps.
 
 IMPORTANT: Always use SPECIFIC real exercise names (e.g., "Barbell Bench Press", "Incline Dumbbell Press", "Barbell Back Squat", "Romanian Deadlift", "Lat Pulldown", "Seated Cable Row"). NEVER use generic names like "Compound Core Movement" or "Isolation Accessory".
 
-Respond strictly in JSON format matching this schema:
+Respond strictly in JSON format:
 {
   "title": "Title of the Workout",
   "description": "Specific coaching cue / focus target for today (1-2 sentences)",
@@ -256,46 +255,17 @@ Respond strictly in JSON format matching this schema:
   ]
 }`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-lite",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            title: { type: Type.STRING },
-            description: { type: Type.STRING },
-            exercises: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  name: { type: Type.STRING },
-                  sets: { type: Type.INTEGER },
-                  reps: { type: Type.INTEGER },
-                  weightLbs: { type: Type.INTEGER }
-                },
-                required: ["name", "sets", "reps"]
-              }
-            }
-          },
-          required: ["title", "description", "exercises"]
-        }
-      }
-    });
-
-    const result = JSON.parse(response.text.trim());
+    const text = await chatCompletion(prompt);
+    const result = JSON.parse(text.trim());
     db.logTelemetry('Workout Agent', 'Generated daily workout session', null, result);
     return result;
   } catch (error: any) {
     console.error("Workout Agent Error:", error);
-    // Safe standard exercises
     const isRecovery = recoveryScore < 40;
     return {
       title: isRecovery ? "Active Mobile Flow" : `${todayFocus} Hypertrophy Phase`,
-      description: isRecovery 
-        ? "Low CNS strain: Focus entirely on restoring length-tension relationships and blood-flow oxygenation." 
+      description: isRecovery
+        ? "Low CNS strain: Focus entirely on restoring length-tension relationships and blood-flow oxygenation."
         : `Targeting concentric muscle failure during ${todayFocus} sequence, maintaining high stability.`,
       exercises: isRecovery ? [
         { id: "e1", name: "Dynamic Hip Flexor Stretch", sets: 3, reps: 10, weightLbs: 0 },
@@ -374,21 +344,17 @@ export async function runConsistencyAgent(
       logsCount: completedLogs.length
     }, null);
 
-    // Compute metrics
-    const targetDays = user.daysPerWeek; // e.g. 4
-    // Get workouts from the last 7 days
+    const targetDays = user.daysPerWeek;
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
     const lastWeekWorkouts = completedLogs.filter(log => new Date(log.date) >= oneWeekAgo);
-    
+
     const countThisWeek = lastWeekWorkouts.length;
     const adherence = Math.min(100, Math.round((countThisWeek / targetDays) * 100));
 
-    // Calculate streak
     let streak = 0;
     const sortedCompleted = [...completedLogs].sort((a,b) => b.date.localeCompare(a.date));
-    
-    // Check if they completed something today or yesterday to continue streak
+
     const todayStr = getLocalDateString();
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
@@ -396,7 +362,7 @@ export async function runConsistencyAgent(
 
     const hasTodayOrYesterday = sortedCompleted.some(w => w.date === todayStr || w.date === yesterdayStr);
     if (hasTodayOrYesterday) {
-      streak = sortedCompleted.length; // Active completions count
+      streak = sortedCompleted.length;
     }
 
     let coachingInsight = "";
@@ -508,7 +474,6 @@ export async function runWeeklyPlannerAgent(
   currentPlan: WeeklyPlan | null
 ): Promise<WeeklyPlan> {
   try {
-    const ai = getGeminiClient();
     db.logTelemetry('Weekly Planner Agent', 'Executing Adaptive Scheduling logic', {
       userGoal: user.fitnessGoal,
       workoutStyle: user.workoutStyle,
@@ -516,22 +481,7 @@ export async function runWeeklyPlannerAgent(
       sleepLastNight: yesterdayLog?.sleepDuration || 8
     }, null);
 
-    // Formulate a baseline split structure
-    let baselineSplit: string[] = [];
-    if (user.workoutStyle === 'Push Pull Legs') {
-      baselineSplit = ['Push', 'Pull', 'Legs', 'Rest', 'Push', 'Pull', 'Rest'];
-    } else if (user.workoutStyle === 'Upper Lower') {
-      baselineSplit = ['Upper', 'Lower', 'Rest', 'Upper', 'Lower', 'Recovery', 'Rest'];
-    } else if (user.workoutStyle === 'Bro Split') {
-      baselineSplit = ['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Recovery', 'Rest'];
-    } else if (user.workoutStyle === 'Arnold Split') {
-      baselineSplit = ['Chest & Back', 'Shoulders & Arms', 'Legs', 'Chest & Back', 'Shoulders & Arms', 'Legs', 'Rest'];
-    } else {
-      baselineSplit = ['Full Body', 'Rest', 'Full Body', 'Rest', 'Full Body', 'Recovery', 'Rest'];
-    }
-
-    // Prepare active input context
-    const currentBriefText = currentPlan 
+    const currentBriefText = currentPlan
       ? JSON.stringify(currentPlan)
       : "No currently assigned plans.";
 
@@ -552,98 +502,33 @@ Adaptive periodization guidelines:
 2. Ensure you never schedule more than 2 high-intensity lift days in direct succession.
 3. Align target lift count with desired days per week (${user.daysPerWeek}). If they want 4 days, ensure there are 4 workouts, and 3 recovery/rest days.
 
-Respond strictly in JSON format matching this schema:
+Respond strictly in JSON format:
 {
   "weekStartDate": "YYYY-MM-DD",
   "days": {
     "Monday": { "type": "Push|Pull|Legs|Upper|Lower|Full Body|Recovery|Rest", "completed": false, "rescheduledReason": "None (If not shifted), otherwise write explanation of the adaptive shift" },
-    "Tuesday": { "type": "...same options...", "completed": false, "rescheduledReason": "..." },
-    "Wednesday": { "type": "...same options...", "completed": false, "rescheduledReason": "..." },
-    "Thursday": { "type": "...same options...", "completed": false, "rescheduledReason": "..." },
-    "Friday": { "type": "...same options...", "completed": false, "rescheduledReason": "..." },
-    "Saturday": { "type": "...same options...", "completed": false, "rescheduledReason": "..." },
+    "Tuesday": { "type": "...", "completed": false, "rescheduledReason": "..." },
+    "Wednesday": { "type": "...", "completed": false, "rescheduledReason": "..." },
+    "Thursday": { "type": "...", "completed": false, "rescheduledReason": "..." },
+    "Friday": { "type": "...", "completed": false, "rescheduledReason": "..." },
+    "Saturday": { "type": "...", "completed": false, "rescheduledReason": "..." },
     "Sunday": { "type": "Rest", "completed": false, "rescheduledReason": "..." }
   },
   "adaptiveNotes": "Direct brief coaching explanation to the client highlighting the recovery-based microcycle shift"
 }`;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash-lite",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            weekStartDate: { type: Type.STRING },
-            days: {
-              type: Type.OBJECT,
-              properties: {
-                Monday: { 
-                  type: Type.OBJECT, 
-                  properties: { type: { type: Type.STRING }, completed: { type: Type.BOOLEAN }, rescheduledReason: { type: Type.STRING } },
-                  required: ["type", "completed"]
-                },
-                Tuesday: { 
-                  type: Type.OBJECT, 
-                  properties: { type: { type: Type.STRING }, completed: { type: Type.BOOLEAN }, rescheduledReason: { type: Type.STRING } },
-                  required: ["type", "completed"]
-                },
-                Wednesday: { 
-                  type: Type.OBJECT, 
-                  properties: { type: { type: Type.STRING }, completed: { type: Type.BOOLEAN }, rescheduledReason: { type: Type.STRING } },
-                  required: ["type", "completed"]
-                },
-                Thursday: { 
-                  type: Type.OBJECT, 
-                  properties: { type: { type: Type.STRING }, completed: { type: Type.BOOLEAN }, rescheduledReason: { type: Type.STRING } },
-                  required: ["type", "completed"]
-                },
-                Friday: { 
-                  type: Type.OBJECT, 
-                  properties: { type: { type: Type.STRING }, completed: { type: Type.BOOLEAN }, rescheduledReason: { type: Type.STRING } },
-                  required: ["type", "completed"]
-                },
-                Saturday: { 
-                  type: Type.OBJECT, 
-                  properties: { type: { type: Type.STRING }, completed: { type: Type.BOOLEAN }, rescheduledReason: { type: Type.STRING } },
-                  required: ["type", "completed"]
-                },
-                Sunday: { 
-                  type: Type.OBJECT, 
-                  properties: { type: { type: Type.STRING }, completed: { type: Type.BOOLEAN }, rescheduledReason: { type: Type.STRING } },
-                  required: ["type", "completed"]
-                }
-              },
-              required: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-            },
-            adaptiveNotes: { type: Type.STRING }
-          },
-          required: ["weekStartDate", "days", "adaptiveNotes"]
-        }
-      }
-    });
-
-    const parsed = JSON.parse(response.text.trim());
-    
-    // Feed individual day exercises
-    const mondayFocus = parsed.days.Monday.type;
-    const tuesdayFocus = parsed.days.Tuesday.type;
-    const wednesdayFocus = parsed.days.Wednesday.type;
-    const thursdayFocus = parsed.days.Thursday.type;
-    const fridayFocus = parsed.days.Friday.type;
-    const saturdayFocus = parsed.days.Saturday.type;
-    const sundayFocus = parsed.days.Sunday.type;
+    const text = await chatCompletion(prompt);
+    const parsed = JSON.parse(text.trim());
 
     const daysWithDetails: any = {};
     const daysArr = [
-      { name: 'Monday', type: mondayFocus },
-      { name: 'Tuesday', type: tuesdayFocus },
-      { name: 'Wednesday', type: wednesdayFocus },
-      { name: 'Thursday', type: thursdayFocus },
-      { name: 'Friday', type: fridayFocus },
-      { name: 'Saturday', type: saturdayFocus },
-      { name: 'Sunday', type: sundayFocus }
+      { name: 'Monday', type: parsed.days.Monday.type },
+      { name: 'Tuesday', type: parsed.days.Tuesday.type },
+      { name: 'Wednesday', type: parsed.days.Wednesday.type },
+      { name: 'Thursday', type: parsed.days.Thursday.type },
+      { name: 'Friday', type: parsed.days.Friday.type },
+      { name: 'Saturday', type: parsed.days.Saturday.type },
+      { name: 'Sunday', type: parsed.days.Sunday.type }
     ];
 
     for (const d of daysArr) {
@@ -677,11 +562,10 @@ Respond strictly in JSON format matching this schema:
     return finalPlan;
   } catch (error: any) {
     console.error("Weekly Planner Agent Error:", error);
-    // Safe schema structure fallback
     const daysWithDetailsFallback: any = {};
     const dTypes = ['Full Body', 'Rest', 'Full Body', 'Rest', 'Full Body', 'Recovery', 'Rest'];
     const dNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    
+
     dNames.forEach((name, idx) => {
       const type = dTypes[idx];
       const isLift = type !== 'Rest' && type !== 'Recovery';
@@ -717,10 +601,8 @@ export async function generateDailyBriefing(user: UserProfile, todayDate: string
 
   db.logTelemetry('System Coordinator', 'Generating Daily AI Briefing Package', { userId: user.id, date: todayDate }, null);
 
-  // Get sleep/activity for the preceding 24h
   let todayLog = db.getHealthLogByDate(todayDate);
   if (!todayLog) {
-    // Generate base metrics from user specs to verify "real data only" flow uses database
     todayLog = {
       id: Math.random().toString(36).substring(7),
       date: todayDate,
@@ -738,11 +620,9 @@ export async function generateDailyBriefing(user: UserProfile, todayDate: string
     db.insertOrUpdateHealthLog(todayLog);
   }
 
-  // Determine workout history
   const history = db.getCompletedWorkouts();
   const prevIntensity = history.length > 0 ? history[0].intensity : null;
 
-  // 1. Run Recovery calculation
   const recovery = await runRecoveryAgent(
     todayLog.sleepDuration,
     todayLog.sleepQuality,
@@ -750,25 +630,19 @@ export async function generateDailyBriefing(user: UserProfile, todayDate: string
     todayLog.steps
   );
 
-  // 2. Adjust Weekly Planner adaptive periodization
   const activePlan = db.getWeeklyPlan();
   const adjustedPlan = await runWeeklyPlannerAgent(user, recovery.score, todayLog, activePlan);
   db.saveWeeklyPlan(adjustedPlan);
 
-  // Determine current day-of-week and what today's workout target focus is
   const daysSorted = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
   const dayName = daysSorted[new Date(todayDate).getDay()];
   const todayFocusType = adjustedPlan.days[dayName]?.type || 'Full Body';
 
-  // 3. Run Workout calculation
   const workout = await runWorkoutAgent(user, recovery.score, todayFocusType);
-
-  // 4. Run Nutrition calculation
   const nutrition = await runNutritionAgent(user, todayLog);
 
-  // Assemble full morning report
-  const motivationalInsight = recovery.score >= 80 
-    ? "Central nervous system is optimized. This is your green-light zone to break personal records safely." 
+  const motivationalInsight = recovery.score >= 80
+    ? "Central nervous system is optimized. This is your green-light zone to break personal records safely."
     : "Physiological fatigue elements are monitored. Prioritize clean movement pattern velocities today.";
 
   const briefing: DailyAIBriefing = {
@@ -786,3 +660,6 @@ export async function generateDailyBriefing(user: UserProfile, todayDate: string
   db.logTelemetry('System Coordinator', 'Completed Daily AI Briefing Package Generation', null, briefing);
   return briefing;
 }
+
+// Export chatCompletionText for use in coach chat endpoints
+export { chatCompletionText };
